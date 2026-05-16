@@ -8,11 +8,14 @@ local config = {
 	info_color = { 79, 201, 194 },
 	hint_color = { 79, 201, 148 },
 	id = "envelope.nvim",
+	use = true,
 }
 
 local uv = vim.loop
 
 local udp = uv.new_udp()
+
+local augroup = vim.api.nvim_create_augroup("DiagnosticSender", { clear = true })
 
 function M.get_diag()
 	local line, _col = unpack(vim.api.nvim_win_get_cursor(0))
@@ -86,17 +89,43 @@ function M.send_to_port()
 	end
 end
 
+local function enable_autocmd()
+	vim.api.nvim_create_autocmd({ "CursorMoved", "CursorHold" }, {
+		group = augroup,
+		callback = function()
+			M.send_to_port()
+		end,
+	})
+end
+
+local function disable_autocmd()
+	vim.api.nvim_clear_autocmds({
+		group = augroup,
+	})
+end
+
+function M.switch()
+	config.use = not config.use
+
+	if config.use then
+		enable_autocmd()
+	else
+		disable_autocmd()
+	end
+end
+
 function M.setup(opts)
 	if opts then
 		config = vim.tbl_extend("force", config, opts)
 	end
 
-	vim.api.nvim_create_autocmd({ "CursorMoved" }, {
-		group = vim.api.nvim_create_augroup("DiagnosticSender", { clear = true }),
-		callback = function()
-			M.send_to_port()
-		end,
-	})
+	if config.use then
+		enable_autocmd()
+	end
+
+	vim.api.nvim_create_user_command("EnvelopeSwitch", function()
+		M.switch()
+	end, {})
 end
 
 return M
