@@ -89,11 +89,18 @@ function M.send_to_port()
 	end
 end
 
+local last_line = vim.fn.line(".")
+
 local function enable_autocmd()
-	vim.api.nvim_create_autocmd({ "CursorMoved", "CursorHold" }, {
+	vim.api.nvim_create_autocmd("CursorMoved", {
 		group = augroup,
 		callback = function()
-			M.send_to_port()
+			local current_line = vim.fn.line(".")
+
+			if current_line ~= last_line then
+				last_line = current_line
+				M.send_to_port()
+			end
 		end,
 	})
 end
