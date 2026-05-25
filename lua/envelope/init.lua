@@ -8,6 +8,9 @@ local config = {
 	info_color = { 79, 201, 194 },
 	hint_color = { 79, 201, 148 },
 	id = "envelope.nvim",
+	treesitter = true,
+	treesitter_color = { 124, 186, 196 },
+	diag = true,
 	use = true,
 }
 
@@ -23,9 +26,8 @@ function M.get_diag()
 	return diags
 end
 
-function M.get_diag_info()
+function M.get_diag_info(msg_list)
 	local diags = M.get_diag()
-	local ret = {}
 	for _, diag in ipairs(diags) do
 		local color = config.warning_color
 
@@ -39,54 +41,78 @@ function M.get_diag_info()
 			color = config.info_color
 		end
 
-		table.insert(ret, { diag.message, color })
+		table.insert(msg_list, { config.id .. "_diag" .. tostring(diag.col), diag.message, color })
 	end
-	return ret
+end
+
+function M.get_treesitter_node_type(msg_list)
+	local node = vim.treesitter.get_node()
+
+	if not node then
+		return
+	end
+
+	local node_type = node:type()
+
+	table.insert(msg_list, {
+		config.id .. "_treesitter",
+		node_type,
+		config.treesitter_color,
+	})
+end
+
+local last_ids = {}
+
+function M.send_packet(data)
+	local json = vim.json.encode(data)
+
+	udp:send(json, config.host, config.port, function(err)
+		if err then
+			vim.schedule(function()
+				print("udp error:", err)
+			end)
+		end
+	end)
 end
 
 function M.send_to_port()
-	local infos = M.get_diag_info()
+	local msg_list = {}
+	local current_ids = {}
 
-	local data
+	if config.diag then
+		M.get_diag_info(msg_list)
+	end
+	if config.treesitter then
+		M.get_treesitter_node_type(msg_list)
+	end
 
-	if #infos == 0 then
-		data = {
-			id = config.id,
-			content = "",
+	for _, info in ipairs(msg_list) do
+		current_ids[info[1]] = true
+		M.send_packet({
+			id = info[1],
+			content = info[2],
 			max_width = 50,
 			max_height = 20,
 			duration = 10.0,
-			color = config.hint_color,
-			show = false,
-		}
-
-		local json = vim.json.encode(data)
-		udp:send(json, config.host, config.port, function(err)
-			if err then
-				print("udp error", err)
-			end
-		end)
-	else
-		for _, info in ipairs(infos) do
-			data = {
-				id = config.id,
-				content = info[1],
-				max_width = 50,
-				max_height = 20,
-				duration = 10.0,
-				color = info[2],
-				show = true,
-			}
-
-			local json = vim.json.encode(data)
-
-			udp:send(json, config.host, config.port, function(err)
-				if err then
-					print("udp error", err)
-				end
-			end)
+			color = info[3],
+			show = true,
+		})
+	end
+	for id, _ in pairs(last_ids) do
+		if not current_ids[id] then
+			M.send_packet({
+				id = id,
+				content = "",
+				max_width = 0,
+				max_height = 0,
+				duration = 0,
+				color = config.hint_color,
+				show = false,
+			})
 		end
 	end
+
+	last_ids = current_ids
 end
 
 local last_line = vim.fn.line(".")
