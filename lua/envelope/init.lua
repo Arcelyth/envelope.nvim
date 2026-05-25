@@ -12,6 +12,7 @@ local config = {
 	treesitter_color = { 124, 186, 196 },
 	diag = true,
 	use = true,
+    debounce_time = 50,
 }
 
 local uv = vim.loop
@@ -117,6 +118,8 @@ end
 
 local last_line = vim.fn.line(".")
 
+local timer = uv.new_timer()
+
 local function enable_autocmd()
 	vim.api.nvim_create_autocmd("CursorMoved", {
 		group = augroup,
@@ -125,7 +128,11 @@ local function enable_autocmd()
 
 			if current_line ~= last_line then
 				last_line = current_line
-				M.send_to_port()
+				
+				timer:stop()
+				timer:start(config.debounce_time, 0, vim.schedule_wrap(function()
+					M.send_to_port()
+				end))
 			end
 		end,
 	})
